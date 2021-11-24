@@ -1,0 +1,146 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Griffin Cook"
+date: "11/24/2021"
+output: html_document
+---
+
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(corrplot)
+library(gbm)
+```
+
+## Data Loading and Processing
+```{r}
+train_in <- read.csv('./pml-training.csv', header=T)
+valid_in <- read.csv('./pml-testing.csv', header=T)
+dim(train_in)
+```
+
+## Cleaning and Processing Data
+```{r}
+trainData<- train_in[, colSums(is.na(train_in)) == 0]
+validData <- valid_in[, colSums(is.na(valid_in)) == 0]
+dim(trainData)
+```
+
+```{r}
+dim(validData)
+```
+
+Remove the first seven variables as they have little to no effect on the outcome of classe.
+```{r}
+trainData <- trainData[, -c(1:7)]
+validData <- validData[, -c(1:7)]
+dim(trainData)
+```
+
+```{r}
+dim(validData)
+```
+
+## Preparing data for prediction
+```{r}
+set.seed(1234) 
+inTrain <- createDataPartition(trainData$classe, p = 0.7, list = FALSE)
+trainData <- trainData[inTrain, ]
+testData <- trainData[-inTrain, ]
+dim(trainData)
+```
+Removing variables with 0 variance
+```{r}
+NZV <- nearZeroVar(trainData)
+trainData <- trainData[, -NZV]
+testData  <- testData[, -NZV]
+dim(trainData)
+```
+We are left with 53 variables that have an impact on classe.
+
+The correlation plot below shows the first principal compononent and the angular order.
+```{r}
+cor_mat <- cor(trainData[, -53])
+corrplot(cor_mat, order = "FPC", method = "color", type = "upper", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+```
+Correlated predictors are ones that have a darker color.
+We can then attain the names of all the highly correlated variables.
+```{r}
+highlyCorrelated = findCorrelation(cor_mat, cutoff=0.75)
+
+names(trainData)[highlyCorrelated]
+```
+
+## Building Models
+We will use three different models for this project, classification trees, random forests and the Generalized Boosted Model.
+
+#Classification Tree Method
+We can plot our model as a dendogram.
+```{r}
+set.seed(12345)
+decisionTreeMod1 <- rpart(classe ~ ., data=trainData, method="class")
+fancyRpartPlot(decisionTreeMod1)
+```
+We then validate the model by using it on our test data.
+```{r}
+predictTreeMod1 <- predict(decisionTreeMod1, testData, type = "class")
+cmtree <- confusionMatrix(factor(predictTreeMod1), factor(testData$classe))
+cmtree
+```
+#Matrix Results
+```{r}
+plot(cmtree$table, col = cmtree$byClass, 
+     main = paste("Decision Tree - Accuracy =", round(cmtree$overall['Accuracy'], 4)))
+```
+
+##Random Forest Model
+First, we determine the model
+```{r}
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modRF1 <- train(classe ~ ., data=trainData, method="rf", trControl=controlRF)
+modRF1$finalModel
+```
+Then we use that model on our test data.
+```{r}
+predictRF1 <- predict(modRF1, newdata=testData)
+cmrf <- confusionMatrix(factor(predictRF1), factor(testData$classe))
+cmrf
+```
+
+```{r}
+plot(modRF1)
+```
+
+```{r}
+plot(cmrf$table, col = cmrf$byClass, main = paste("Random Forest Confusion Matrix: Accuracy =", round(cmrf$overall['Accuracy'], 4)))
+```
+
+##Prediction Using Generalized Boosted Model
+```{r}
+set.seed(12345)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modGBM  <- train(classe ~ ., data=trainData, method = "gbm", trControl = controlGBM, verbose = FALSE)
+modGBM$finalModel
+```
+
+```{r}
+print(modGBM)
+```
+
+We validate our gbm model by using it on our test data.
+```{r}
+predictGBM <- predict(modGBM, newdata=testData)
+cmGBM <- confusionMatrix(factor(predictGBM), factor(testData$classe))
+cmGBM
+```
+##Applying the Best Model
+Out of all three models, we saw that the random foresting model had the highest accuracy of 1, so we will apply that model onto the validation data that we use for our quiz.
+```{r}
+Results <- predict(modRF1, newdata=validData)
+Results
+```
